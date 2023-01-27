@@ -1,3 +1,4 @@
+from turtle import shape
 from skyfield.api import load, wgs84
 from skyfield.constants import (AU_M, ERAD, DEG2RAD, IERS_2010_INVERSE_EARTH_FLATTENING, tau)
 from skyfield.units import Angle
@@ -14,20 +15,41 @@ from descartes import PolygonPatch
 
 import numpy as np
 
+import math
+
 from urllib.parse import quote
 import logging
 
-satNames = {
-    "NOAA 18",
-    "GOES 16",
-    "GOES 17"
-}
+sats = [
+    {"name": "NOAA 15", "band": "l"},
+    {"name": "NOAA 18", "band": "l"},
+    {"name": "NOAA 19", "band": "l"},
+    #{"name": "GOES 15", "band": "l"},
+    {"name": "GOES 16", "band": "l"},
+    #{"name": "GOES 17", "band": "l"},
+    {"name": "GOES 18", "band": "l"},
+    {"name": "METEOR-M 2", "band": "l"},
+    {"name": "METEOR-M2 2", "band": "l"},
+    {"name": "METOP-B", "band": "l"},
+    {"name": "METOP-C", "band": "l"},
+    {"name": "DMSP 5D-3 F18", "band": "s"},
+    {"name": "DMSP 5D-3 F17", "band": "s"},
+]
 
-colors = {
+mapColors = {
     "LAND": "#335533",
+    "LAND_LINE": "#224422",
     "WATER": "#333355",
     "BG": "#333333",
-    "SAT_MKR": "#66AA66",
+    "SAT_CVG_LINE": "#FFFFFF55",
+    "SAT_CVG_FILL": "#FFFFFF11",
+}
+
+bandColors = {
+    "l": "#77CCCC",
+    "s": "#77CC77",
+    "c": "#CCCC77",
+    "x": "#CC7777",
 }
 
 dataUrl = 'http://celestrak.org/NORAD/elements/gp.php?'
@@ -45,17 +67,18 @@ def queryTLEs(list):
     # Empty list of satellites
     sats = []
     # Load each satellite, requesting a reload of TLE data if it's out of date
-    for satName in list:
-        filename = 'tle-{}.txt'.format(satName)
+    for sat in list:
+        filename = 'tle-{}.txt'.format(sat["name"])
         # Prepare the URL using urllib to replace invalid characters
-        url = '{}NAME={}'.format(dataUrl,quote(satName))
+        url = '{}NAME={}'.format(dataUrl,quote(sat["name"]))
         # Load the TLE, either from disk or download
+        logging.debug("Querying {}".format(url))
         sat = load.tle_file(url,filename=filename)[0]
         # Check date
         days = ts.now() - sat.epoch
         if abs(days) > 14:
             sat = load.tle_file(url, filename=filename, reload=True)
-            logging.warn("Satellite {} TLE was out of date, reloaded".format(satName))
+            logging.warn("Satellite {} TLE was out of date, reloaded".format(sat["name"]))
         sats.append(sat)
 
     return sats
@@ -66,9 +89,26 @@ def getLatLonAlt(satellite):
     geo = satellite.at(ts.now())
     # Get wgs84 coords
     lat, lon = wgs84.latlon_of(geo)
-    height = wgs84.height_of(geo).km
+    alt = wgs84.height_of(geo)
 
-    return lat, lon, height
+    return lat, lon, alt
+
+def getCoverageRadius(alt):
+    # Get c (satellite altitude in m plus earth's radius in m)
+    c = alt.m + ERAD
+    # Get length of n (small side of triangle)
+    n = c - (2*ERAD*alt.m + alt.m**2)/c
+    # Get coverage radius in meters
+    return math.sqrt((2*n*alt.m*ERAD + n*alt.m)/c)
+
+def generateCircle(lat, lon, radius, n_points=64):
+
+    point = [lon.degrees, lat.degrees]
+    angles = np.linspace(0, 360, n_points)
+    polygon = geog.propagate(point, angles, radius)
+    shape = shapely.geometry.mapping(shapely.geometry.Polygon(polygon))
+    #print(shape)
+    return shape
 
 def plotMap():
     # Create mpl figure and get axis
@@ -76,8 +116,8 @@ def plotMap():
     ax = fig.gca()
 
     # Set map styling
-    ax.set_facecolor(colors["WATER"])
-    fig.set_facecolor(colors["BG"])
+    ax.set_facecolor(mapColors["WATER"])
+    fig.set_facecolor(mapColors["BG"])
     
     # Margins
     plt.subplots_adjust(left=0,bottom=0,right=1,top=1,wspace=0,hspace=0)
@@ -85,7 +125,7 @@ def plotMap():
 
     # Plot land
     for feature in geoLand['features']:
-        ax.add_patch(PolygonPatch(feature['geometry'], fc=colors['LAND'], ec=colors["LAND"]))
+        ax.add_patch(PolygonPatch(feature['geometry'], fc=mapColors['LAND'], ec="#00000000"))
 
     ax.axis('scaled')
 
@@ -97,17 +137,26 @@ def plotSats(fig, ax, satellites):
     for i, sat in enumerate(satellites):
         # Get Sat Coords
         lat, lon, alt = getLatLonAlt(sat)
-        # Calculate footprint circle
 
-        # Plot & Annotate
-        ax.plot(lon.degrees, lat.degrees, marker='2', markersize=15, color=colors["SAT_MKR"])
-        ax.annotate(sat.name, (lon.degrees, lat.degrees), textcoords="offset points", xytext=(0,10), ha='center', color=colors["SAT_MKR"])
+        # Get coverage radius
+        #radius = getCoverageRadius(alt)
+        # Generate circle geo object
+        #circle = generateCircle(lat, lon, radius)
+        # Plot circle
+        #ax.add_patch(PolygonPatch(circle, fc="#00000000", ec=colors["SAT_CVG_LINE"]))
+
+        # Get band-based color
+        satColor = bandColors[sats[i]["band"]]
+
+        # Plot & Annotate Points
+        ax.plot(lon.degrees, lat.degrees, marker='2', markersize=15, color=satColor)
+        ax.annotate(sat.name, (lon.degrees, lat.degrees), textcoords="offset points", xytext=(6,2), ha='left', color=satColor, fontsize=10, fontweight='medium')
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
 
     # Load satellites
-    satellites = queryTLEs(satNames)
+    satellites = queryTLEs(sats)
     logging.info("Loaded satellites:")
     for sat in satellites:
         logging.info("    {}".format(sat))
@@ -115,7 +164,7 @@ if __name__ == "__main__":
     # Get satellite positions
     for sat in satellites:
         lat, lon, alt = getLatLonAlt(sat)
-        logging.info("Satellite {}: {}, {}, alt: {:.0f} km".format(sat, lat, lon, alt))
+        logging.info("Satellite {}: {}, {}, alt: {:.0f} km, classification: {}".format(sat.name, lat.degrees, lon.degrees, alt.km, sat.model.classification))
 
     # Display Map
     fig, ax = plotMap()
