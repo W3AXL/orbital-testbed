@@ -1,0 +1,21 @@
+[
+    {"name": "NOAA 15", "band": "l"},
+    {"name": "NOAA 18", "band": "l"},
+    {"name": "NOAA 19", "band": "l"},
+    {"name": "GEO-KOMPSAT-2A", "band": "l"},
+    {"name": "GOES 16", "band": "l"},
+    {"name": "GOES 18", "band": "l"},
+    {"name": "METEOR-M 2", "band": "l"},
+    {"name": "METEOR-M2 2", "band": "l"},
+    {"name": "METOP-B", "band": "l"},
+    {"name": "METOP-C", "band": "l"},
+    {"name": "DMSP 5D-3 F18", "band": "s"},
+    {"name": "DMSP 5D-3 F17", "band": "s"},
+    {"name": "JCSAT-2B", "band": "c"},
+    {"name": "INTELSAT 21", "band": "c"},
+    {"name": "Suomi NPP", "band": "x"},
+    {"name": "NOAA 20", "band": "x"},
+    {"name": "JPSS-2", "band": "x"},
+    {"name": "AQUA", "band": "x"},
+    {"name": "TERRA", "band": "x"}
+]
