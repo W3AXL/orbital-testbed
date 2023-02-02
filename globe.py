@@ -45,7 +45,16 @@ bandColors = {
     "x": "#CC7777",
 }
 
+trackColors = {
+    "l": "#77CCCC88",
+    "s": "#77CC7788",
+    "c": "#CCCC7788",
+    "x": "#CC777788",
+}
+
 dataUrl = 'http://celestrak.org/NORAD/elements/gp.php?'
+
+groundTrackMins = 30
 
 # Skyfield Timescale
 ts = load.timescale()
@@ -61,6 +70,7 @@ ax = None
 satPoints = []  # XY points of the satellites
 satAnns = []    # Annotations for satellite names
 satPrints = []  # Footprint circles of the satellites
+satTracks = []
 
 def importSats(filename):
     global sats
@@ -109,21 +119,22 @@ def getLatLonAlt(satellite):
     return lat, lon, alt
 
 def getCoverageRadius(alt):
-    # Get c (satellite altitude in m plus earth's radius in m)
-    c = alt.m + ERAD
-    # Get length of n (small side of triangle)
-    n = c - (2*ERAD*alt.m + alt.m**2)/c
-    # Get coverage radius in meters
-    return math.sqrt((2*n*alt.m*ERAD + n*alt.m)/c)
+    # Calculate angle (in radians) phi due to right triangle with side ERAD and hypotenuse ERAD + alt
+    phi = math.acos(ERAD/(ERAD+alt.m))
+    # Calculate arc length of the earth's surface caused by phi and return this
+    return (phi * ERAD)
 
-def generateCircle(lat, lon, radius, n_points=64):
+def generateCircle(lat, lon, radius, n_points=180):
 
     point = [lon, lat]
     angles = np.linspace(0, 360, n_points)
+    # Generate list of lat/lon coords around the circle
     polygon = geog.propagate(point, angles, radius)
+    # Convert to geo shape which also makes sure to validate lat/lon coords
     shape = shapely.geometry.mapping(shapely.geometry.Polygon(polygon))
-    #print(shape)
-    return shape
+    #print(list(shape['coordinates'][0]))
+    return list(shape['coordinates'][0])
+    #return shape
 
 def plotMap():
 
@@ -149,12 +160,18 @@ def in_frame(annotation):
     return plt_bbox.contains(ann_bbox.x1, ann_bbox.y0)
 
 def updateSatPos():
-    # Update satellite positions
+    # Update satellite positions and ground tracks
     for i, sat in enumerate(sats):
         # Get Sat Coords
         lat, lon, alt = getLatLonAlt(sat["satobj"])
         # Save to list
         sats[i]["pos"] = [lat, lon, alt]
+        # Get skyfield time array of our time range
+        curTime = ts.now()
+        times = ts.utc(curTime.utc[0], curTime.utc[1], curTime.utc[2], curTime.utc[3], np.arange(curTime.utc[4],groundTrackMins,1))
+        # Calculate satellite positions at these times
+        sats[i]["track"] = sat["satobj"].at(times).subpoint()
+        #print(sats[i]["track"])
 
 def init():
     global fig
@@ -163,6 +180,7 @@ def init():
     global satPrints
     global satPoints
     global satAnns
+    global satTracks
 
     # Draw map
     plotMap()
@@ -186,11 +204,15 @@ def init():
 
         # Calculate footprint circle
         #radius = getCoverageRadius(alt)
-        # Generate circle geo object
+        # Generate circle polygon points
         #circle = generateCircle(lat, lon, radius)
         # Plot circle
-        #print = ax.add_patch(PolygonPatch(circle, fc="#00000000", ec=mapColors["SAT_CVG_LINE"]))
-        #satPrints.append(print)
+        #footprint = ax.add_patch(plt.Polygon(circle, fc="#00000000", ec=mapColors["SAT_CVG_LINE"]))
+        #satPrints.append(footprint)
+
+        # Plot the ground track line
+        track = ax.plot(sat["track"].longitude.degrees, sat["track"].latitude.degrees, color=trackColors[band], linewidth=0.5)[0]
+        satTracks.append(track)
 
     return satPoints, satAnns, satPrints
 
@@ -201,6 +223,7 @@ def update(frame):
     global satPoints
     global satAnns
     global satPrints
+    global satTracks
 
     # Get new positions
     updateSatPos()
@@ -209,7 +232,7 @@ def update(frame):
         # Get new position
         lat = sats[idx]["pos"][0].degrees
         lon = sats[idx]["pos"][1].degrees
-        alt = sat["pos"][2]
+        alt = sats[idx]["pos"][2]
         # Update marker position
         point.set_data(lon, lat)
         # Update annotation position
@@ -225,8 +248,11 @@ def update(frame):
         #radius = getCoverageRadius(alt)
         # Generate circle geo object
         #circle = generateCircle(lat, lon, radius)
-        # update circle
-        #satPrints[idx] = PolygonPatch(circle)
+        # Update circle
+        #satPrints[idx].set_xy(circle)
+
+        # Plot the ground track line
+        satTracks[idx].set_data(sats[idx]["track"].longitude.degrees, sats[idx]["track"].latitude.degrees)
 
     return satPoints, satAnns, satPrints
 

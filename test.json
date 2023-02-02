@@ -1,0 +1,4 @@
+[
+    {"name": "GOES 16", "band": "l"},
+    {"name": "GOES 18", "band": "l"}
+]
